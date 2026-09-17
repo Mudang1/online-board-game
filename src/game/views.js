@@ -1,3 +1,4 @@
+import {publicEstate,estateWorth} from './estate.js';
 import {publicCrystal,publicCrystalPlayer,privateCrystal} from './crystal.js';
 import { CARD_DEFINITIONS } from './cards.js';
 export function serializePublicRoom(room) {
@@ -5,11 +6,13 @@ export function serializePublicRoom(room) {
     code: room.code, listed: room.listed === true, mode: room.mode ?? 'zombie', drawsRemaining: room.drawsRemaining ?? 1, phase: room.phase, turnNumber: room.turnNumber,
     turnDeadline: room.turnDeadline, serverNow: Date.now(),
     currentPlayerId: room.players[room.turnIndex]?.id ?? null,
+    estate: room.mode === 'estate' ? publicEstate(room) : null,
     crystal: room.mode === 'crystal' ? publicCrystal(room) : null,
     deckCount: room.deck.length, discardCount: room.discard.length,
     topDiscard: CARD_DEFINITIONS[room.discard.at(-1)] ?? null,
     winnerId: room.players.find(p => p.token === room.winnerToken)?.id ?? null,
     players: room.players.map((p, seat) => ({
+      estate: room.mode === 'estate' && p.estate ? {...p.estate,worth:estateWorth(room,p)} : null,
       crystal: room.mode === 'crystal' ? publicCrystalPlayer(p) : null,
       id: p.id, name: p.name, seat, host: p.host, ready: p.ready,
       connected: p.connected, hp: p.hp, maxHp: p.maxHp,

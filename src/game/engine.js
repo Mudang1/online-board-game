@@ -1,3 +1,4 @@
+import {startEstate,actEstate,timeoutEstate,endEstate,releaseEstate} from './estate.js';
 import {startCrystal,performCrystalAction,finishCrystalTurn} from './crystal.js';
 import {startBoomGame,playBoomCard,drawBoomCard,clearPreviews} from './boom.js';
 import { randomUUID, randomInt } from 'node:crypto';
@@ -106,7 +107,7 @@ function drawOne(room) {
 
 export function createRoom({ hostName, hostSocketId, hostToken, code, mode = 'zombie', listed = false }) {
   if (typeof listed !== 'boolean') throw gameError('รูปแบบการแสดงห้องไม่ถูกต้อง');
-  if (!['zombie','boom','crystal'].includes(mode)) throw gameError('โหมดเกมไม่ถูกต้อง');
+  if (!['zombie','boom','crystal','estate'].includes(mode)) throw gameError('โหมดเกมไม่ถูกต้อง');
   if (!hostToken) throw gameError('ต้องมี reconnect token');
   return {
     code,
@@ -186,6 +187,8 @@ export function startGame(room, hostToken, random = Math.random) {
   if (!room.players.every(p => p.connected)) throw gameError('ผู้เล่นทุกคนต้องออนไลน์ก่อนเริ่ม');
   if (!room.players.every(p => p.ready)) throw gameError('ผู้เล่นทุกคนต้องกดพร้อมก่อน');
 
+  if (room.mode === 'estate') return startEstate(room);
+  room.estate = null; for (const p of room.players) p.estate = null;
   if (room.mode === 'crystal') return startCrystal(room, random, boomApi);
   room.crystal = null;
   for (const p of room.players) p.crystal = null;
@@ -224,6 +227,7 @@ export function startGame(room, hostToken, random = Math.random) {
 
 export function playCard(room, token, cardId, targetToken) {
   const player = requirePlayingTurn(room, token);
+  if (room.mode === 'estate') throw gameError('โหมดนี้ใช้ทอยลูกเต๋าบนกระดาน');
   if (room.mode === 'crystal') throw gameError('โหมดนี้ใช้คำสั่งบนกระดานอัญมณี');
   if (room.mode === 'boom') return playBoomCard(room, player, cardId, targetToken, boomApi);
   const card = CARD_DEFINITIONS[cardId];
@@ -297,6 +301,7 @@ export function playCard(room, token, cardId, targetToken) {
 
 export function drawCard(room, token) {
   const player = requirePlayingTurn(room, token);
+  if (room.mode === 'estate') throw gameError('โหมดนี้ใช้ทอยลูกเต๋าบนกระดาน');
   if (room.mode === 'crystal') throw gameError('โหมดนี้ไม่มีการจั่ว ใช้เก็บ ซื้อ จอง หรือผ่าน');
   if (room.mode === 'boom') return drawBoomCard(room, player, boomApi);
   const card = drawOne(room);
@@ -338,6 +343,7 @@ export function restartRoom(room, token) {
   const host = findPlayer(room, token);
   if (!host.host) throw gameError('เฉพาะ Host ที่เริ่มห้องใหม่ได้');
   clearPreviews(room);
+  room.estate = null; for (const p of room.players) p.estate = null;
   room.crystal = null;
   for (const p of room.players) p.crystal = null;
   room.drawsRemaining = 1;
@@ -373,6 +379,7 @@ export { gameError };
 
 export function expireTurn(room, now = Date.now()) {
   if (room.phase !== 'playing' || now < room.turnDeadline) return false;
+  if (room.mode === 'estate') { timeoutEstate(room); return true; }
   if (room.mode === 'crystal') {
     pushLog(room, 'หมดเวลา — ผ่านเทิร์นอัตโนมัติ', 'turn');
     finishCrystalTurn(room, currentPlayer(room), boomApi);
@@ -393,9 +400,10 @@ export function leaveRoom(room, token) {
     player.socketId = null;
     player.eliminated = true;
     player.hp = 0;
+    if (room.mode === 'estate') releaseEstate(room, player);
     checkWinner(room);
     if (room.phase === 'playing' && currentPlayer(room) === player) {
-      if (room.mode === 'crystal') finishCrystalTurn(room, player, boomApi); else advanceTurn(room);
+      if (room.mode === 'estate') endEstate(room); else if (room.mode === 'crystal') finishCrystalTurn(room, player, boomApi); else advanceTurn(room);
     }
   }
   if (player.host) {
@@ -419,11 +427,11 @@ const boomApi = {advanceTurn,pushLog,checkWinner,gameError};
 export function setMode(room, token, mode) {
   const host = findPlayer(room,token);
   if (!host.host || room.phase !== 'lobby') throw gameError('เฉพาะเจ้าของห้องเปลี่ยนโหมดได้ใน Lobby');
-  if (!['zombie','boom','crystal'].includes(mode)) throw gameError('โหมดเกมไม่ถูกต้อง');
+  if (!['zombie','boom','crystal','estate'].includes(mode)) throw gameError('โหมดเกมไม่ถูกต้อง');
   if (room.mode === mode) return room;
   room.mode = mode;
   for (const p of room.players) p.ready = false;
-  pushLog(room, `เปลี่ยนเป็น ${mode === 'crystal' ? 'Crystal Guild' : mode === 'boom' ? 'Boom Cats' : 'Zombie Cats'} — ทุกคนกดพร้อมใหม่`, 'info');
+  pushLog(room, `เปลี่ยนเป็น ${mode === 'estate' ? 'เมืองแมวเศรษฐี' : mode === 'crystal' ? 'Crystal Guild' : mode === 'boom' ? 'Boom Cats' : 'Zombie Cats'} — ทุกคนกดพร้อมใหม่`, 'info');
   return room;
 }
 
@@ -440,3 +448,5 @@ export function crystalAction(room, token, payload) {
   if (room.mode !== 'crystal') throw gameError('ห้องนี้ไม่ใช่ Crystal Guild');
   return performCrystalAction(room, player, payload, boomApi);
 }
+
+export function estateAction(room, token, payload) { const player=requirePlayingTurn(room,token); if(room.mode!=='estate')throw gameError('ห้องนี้ไม่ใช่เมืองแมวเศรษฐี'); return actEstate(room,player,payload); }
