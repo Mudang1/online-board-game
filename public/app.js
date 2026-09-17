@@ -30,6 +30,7 @@ $('#chatForm').onsubmit=async e=>{e.preventDefault();const text=$('#chat').value
 function stats(p){if(state?.room.mode==='boom')return `<span class="stat-chip">${p.eliminated?'ตกรอบ':'ยังรอด'}</span>`;return `<span class="stat-chip hp">♥ ${p.hp}/${p.maxHp}</span><span class="stat-chip">เกราะ ${p.guard}</span><span class="stat-chip infection">☣ ${p.infection}/3</span>${p.extraLife?`<span class="stat-chip">✦ ${p.extraLife}</span>`:''}`;}
 function selectCard(card){if(!state||busy||card.target==='passive')return;if(card.target==='opponent'){selected={card,turn:state.room.turnNumber};$('#targetTitle').textContent=card.name+' · เลือกเป้าหมาย';$('#targetList').innerHTML=state.room.players.filter(p=>p.id!==state.me.id&&!p.eliminated).map(p=>`<button class="target-btn" data-target="${p.id}"><img src="${portrait(p)}" alt=""><span><b>${esc(p.name)}</b><small>${state.room.mode==='boom'?`ไพ่ ${p.handCount} ใบ`:`HP ${p.hp} · เกราะ ${p.guard}`}</small></span></button>`).join('');$('#targetList').querySelectorAll('button').forEach(b=>b.onclick=()=>act('play-card',{cardId:card.id,targetId:b.dataset.target}));$('#targets').showModal();}else act('play-card',{cardId:card.id});}
 function render(){
+ document.body.classList.toggle("estate-play",!!state&&state.room.mode==="estate"&&state.room.phase!=="lobby");
  renderMode();
  connection();$('#browseRooms').classList.toggle('hidden',!!state);$('#landing').classList.toggle('hidden',!!state);$('#leave').classList.toggle('hidden',!state);
  $('#roomScreen').classList.toggle('hidden',!state||state.room.phase!=='lobby');$('#gameScreen').classList.toggle('hidden',!state||state.room.phase==='lobby');
@@ -152,3 +153,4 @@ setInterval(()=>{if(!document.hidden&&!state)refreshRooms();},5000);
 document.addEventListener('visibilitychange',()=>{if(!document.hidden&&!state)refreshRooms();});
 
 $('#browseRooms').onclick=()=>{$('#roomBrowser').scrollIntoView({behavior:'smooth',block:'start'});refreshRooms();};
+
