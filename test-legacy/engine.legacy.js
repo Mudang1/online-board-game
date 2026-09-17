@@ -1,0 +1,9 @@
+import test from 'node:test';
+import assert from 'node:assert/strict';
+import {createDeck, createGame, startGame, drawCard, playCard, publicState} from '../game/engine.js';
+
+test('deck contains original supported card types',()=>{const types=new Set(createDeck().map(c=>c.type)); for(const t of ['attack','heal','skip','steal','shield','infection','swap']) assert.ok(types.has(t));});
+test('game starts with 2 players, 4 cards each and 3 hp',()=>{let g=createGame('CAT12');g.players.push({id:'a',token:'a',name:'A',ready:true},{id:'b',token:'b',name:'B',ready:true});g=startGame(g);assert.equal(g.status,'playing');assert.equal(g.players[0].hand.length,4);assert.equal(g.players[1].hand.length,4);assert.equal(g.players[0].hp,3);});
+test('draw advances turn',()=>{let g=createGame('CAT12');g.players.push({id:'a',token:'a',name:'A',ready:true},{id:'b',token:'b',name:'B',ready:true});g=startGame(g);const before=g.turn;g=drawCard(g,'a');assert.notEqual(g.turn,before);});
+test('attack damages target and is discarded',()=>{let g=createGame('CAT12');g.players.push({id:'a',token:'a',name:'A',ready:true},{id:'b',token:'b',name:'B',ready:true});g=startGame(g);g.players[0].hand=[{id:'x',type:'attack',name:'โจมตี'}];g=playCard(g,'a','x','b');assert.equal(g.players[1].hp,2);assert.equal(g.discard.at(-1).type,'attack');});
+test('public state hides other hands',()=>{let g=createGame('CAT12');g.players.push({id:'a',token:'a',name:'A',ready:true},{id:'b',token:'b',name:'B',ready:true});g=startGame(g);const s=publicState(g,'a');assert.ok(Array.isArray(s.you.hand));assert.equal(s.players.find(p=>p.id==='b').hand,undefined);assert.equal(s.players.find(p=>p.id==='b').handCount,4);});
