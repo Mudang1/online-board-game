@@ -1,10 +1,11 @@
+import {listPublicRooms} from './src/game/room-browser.js';
 import express from 'express';
 import http from 'node:http';
 import {randomBytes, randomInt} from 'node:crypto';
 import {Server} from 'socket.io';
 import path from 'node:path';
 import {fileURLToPath} from 'node:url';
-import {createRoom,joinRoom,setReady,startGame,playCard,drawCard,disconnectPlayer,reconnectPlayer,restartRoom,expireTurn,leaveRoom,removeOfflinePlayer} from './src/game/engine.js';
+import {createRoom,joinRoom,setReady,startGame,playCard,drawCard,disconnectPlayer,reconnectPlayer,restartRoom,expireTurn,leaveRoom,removeOfflinePlayer,setMode,setVisibility} from './src/game/engine.js';
 import {serializePublicRoom,serializePrivatePlayer} from './src/game/views.js';
 const root=path.dirname(fileURLToPath(import.meta.url));
 const fail=message=>{throw new Error(message);};
@@ -34,9 +35,11 @@ export function createGameServer(){
        reply({ok:true,...fn(payload)});
      }catch(error){reply({ok:false,error:error.message||'เกิดข้อผิดพลาด'});}
    });}
+   on('list-rooms',()=>({rooms:listPublicRooms(rooms)}));
+   on('set-visibility',payload=>{const[r,p]=requireMember(socket,payload);setVisibility(r,p.token,payload.listed);emitRoom(r);});
    on('create-room',payload=>{
      vacant(socket);if(rooms.size>=1000)fail('เซิร์ฟเวอร์มีห้องเต็มแล้ว');
-     const code=newCode(),secret=token(),r=createRoom({hostName:name(payload),hostSocketId:socket.id,hostToken:secret,code});
+     const code=newCode(),secret=token(),r=createRoom({hostName:name(payload),hostSocketId:socket.id,hostToken:secret,code,mode:payload.mode??'zombie',listed:payload.listed??false});
      rooms.set(code,r);attach(socket,r,r.players[0]);emitRoom(r);return {code,token:secret};
    });
    on('join-room',payload=>{
@@ -52,6 +55,7 @@ export function createGameServer(){
      reconnectPlayer(r,{token:p.token,socketId:socket.id});if(!r.players.some(x=>x.host&&x.connected)){r.players.forEach(x=>x.host=false);p.host=true;}
      attach(socket,r,p);emitRoom(r);return {code:r.code,token:p.token};
    });
+   on('set-mode',payload=>{const[r,p]=requireMember(socket,payload);setMode(r,p.token,payload.mode);emitRoom(r);});
    on('ready',payload=>{const[r,p]=requireMember(socket,payload);if(payload.ready!==undefined&&typeof payload.ready!=='boolean')fail('สถานะพร้อมไม่ถูกต้อง');setReady(r,p.token,payload.ready??!p.ready);emitRoom(r);});
    on('remove-offline',payload=>{const[r,p]=requireMember(socket,payload);removeOfflinePlayer(r,p.token,payload.playerId);emitRoom(r);});
    on('start-game',payload=>{const[r,p]=requireMember(socket,payload);startGame(r,p.token);emitRoom(r);});

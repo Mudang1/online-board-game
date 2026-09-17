@@ -1,7 +1,7 @@
 import { CARD_DEFINITIONS } from './cards.js';
 export function serializePublicRoom(room) {
   return {
-    code: room.code, phase: room.phase, turnNumber: room.turnNumber,
+    code: room.code, listed: room.listed === true, mode: room.mode ?? 'zombie', drawsRemaining: room.drawsRemaining ?? 1, phase: room.phase, turnNumber: room.turnNumber,
     turnDeadline: room.turnDeadline, serverNow: Date.now(),
     currentPlayerId: room.players[room.turnIndex]?.id ?? null,
     deckCount: room.deck.length, discardCount: room.discard.length,
@@ -20,5 +20,5 @@ export function serializePublicRoom(room) {
 export function serializePrivatePlayer(room, token) {
   const p = room.players.find(p => p.token === token);
   if (!p) return null;
-  return { id: p.id, hand: p.hand.map((id, index) => ({ instanceId: `${index}-${id}`, ...CARD_DEFINITIONS[id] })) };
+  return { id: p.id, peek: (p.peek ?? []).map(id => ({...CARD_DEFINITIONS[id]})), hand: p.hand.map((id, index) => ({ instanceId: `${index}-${id}`, ...CARD_DEFINITIONS[id] })) };
 }

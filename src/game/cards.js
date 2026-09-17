@@ -1,4 +1,6 @@
+import { BOOM_CARDS } from './boom.js';
 export const CARD_DEFINITIONS = {
+  ...BOOM_CARDS,
   'scratch-frenzy': { id:'scratch-frenzy', name:'Scratch Frenzy', family:'attack', target:'opponent', actionCost:1, text:'ทำความเสียหาย 2 หน่วยใส่ผู้เล่นเป้าหมาย' },
   'trash-shield': { id:'trash-shield', name:'Trash-Can Shield', family:'defense', target:'self', actionCost:1, text:'รับ Guard 2 หน่วยจนกว่าจะถูกใช้' },
   'tuna-patch': { id:'tuna-patch', name:'Tuna Patch', family:'heal', target:'self', actionCost:1, text:'ฟื้น HP 2 หน่วย' },

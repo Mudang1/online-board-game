@@ -1,3 +1,4 @@
+import {startBoomGame,playBoomCard,drawBoomCard,clearPreviews} from './boom.js';
 import { randomUUID, randomInt } from 'node:crypto';
 import { buildDeck, CARD_DEFINITIONS } from './cards.js';
 
@@ -62,6 +63,7 @@ function checkWinner(room) {
 }
 
 function advanceTurn(room) {
+  clearPreviews(room);
   checkWinner(room);
   if (room.phase !== 'playing') return;
   const total = room.players.length;
@@ -72,7 +74,8 @@ function advanceTurn(room) {
       room.turnNumber += 1;
       room.turnDeadline = Date.now() + TURN_MS;
       const next = room.players[idx];
-      next.actionPoints = 1;
+      next.actionPoints = room.mode === 'boom' ? 3 : 1;
+      room.drawsRemaining = 1;
       pushLog(room, `ถึงตาของ ${next.name}`, 'turn');
       return;
     }
@@ -100,10 +103,15 @@ function drawOne(room) {
   return room.deck.pop() ?? null;
 }
 
-export function createRoom({ hostName, hostSocketId, hostToken, code }) {
+export function createRoom({ hostName, hostSocketId, hostToken, code, mode = 'zombie', listed = false }) {
+  if (typeof listed !== 'boolean') throw gameError('รูปแบบการแสดงห้องไม่ถูกต้อง');
+  if (!['zombie','boom'].includes(mode)) throw gameError('โหมดเกมไม่ถูกต้อง');
   if (!hostToken) throw gameError('ต้องมี reconnect token');
   return {
     code,
+    mode,
+    listed,
+    drawsRemaining: 1,
     phase: 'lobby',
     createdAt: Date.now(),
     players: [{
@@ -177,6 +185,9 @@ export function startGame(room, hostToken, random = Math.random) {
   if (!room.players.every(p => p.connected)) throw gameError('ผู้เล่นทุกคนต้องออนไลน์ก่อนเริ่ม');
   if (!room.players.every(p => p.ready)) throw gameError('ผู้เล่นทุกคนต้องกดพร้อมก่อน');
 
+  if (room.mode === 'boom') return startBoomGame(room, random, boomApi);
+  clearPreviews(room);
+  room.drawsRemaining = 1;
   room.deck = buildDeck(random);
   room.discard = [];
   room.turnIndex = 0;
@@ -209,6 +220,7 @@ export function startGame(room, hostToken, random = Math.random) {
 
 export function playCard(room, token, cardId, targetToken) {
   const player = requirePlayingTurn(room, token);
+  if (room.mode === 'boom') return playBoomCard(room, player, cardId, targetToken, boomApi);
   const card = CARD_DEFINITIONS[cardId];
   if (!card) throw gameError('ไม่รู้จักการ์ดใบนี้');
   const handIndex = player.hand.indexOf(cardId);
@@ -280,6 +292,7 @@ export function playCard(room, token, cardId, targetToken) {
 
 export function drawCard(room, token) {
   const player = requirePlayingTurn(room, token);
+  if (room.mode === 'boom') return drawBoomCard(room, player, boomApi);
   const card = drawOne(room);
   if (card) {
     if (player.hand.length >= MAX_HAND) {
@@ -318,6 +331,8 @@ export function reconnectPlayer(room, { token, socketId }) {
 export function restartRoom(room, token) {
   const host = findPlayer(room, token);
   if (!host.host) throw gameError('เฉพาะ Host ที่เริ่มห้องใหม่ได้');
+  clearPreviews(room);
+  room.drawsRemaining = 1;
   room.phase = 'lobby';
   room.deck = [];
   room.discard = [];
@@ -330,6 +345,7 @@ export function restartRoom(room, token) {
     Object.assign(player, {
       ready: false,
       hp: MAX_HP,
+      maxHp: MAX_HP,
       infection: 0,
       zombie: false,
       eliminated: false,
@@ -350,7 +366,9 @@ export { gameError };
 export function expireTurn(room, now = Date.now()) {
   if (room.phase !== 'playing' || now < room.turnDeadline) return false;
   pushLog(room, 'หมดเวลา — จั่วและจบเทิร์นอัตโนมัติ', 'turn');
-  drawCard(room, currentPlayer(room).token);
+  const turn = room.turnNumber;
+  do { drawCard(room, currentPlayer(room).token); }
+  while (room.mode === 'boom' && room.phase === 'playing' && room.turnNumber === turn);
   return true;
 }
 
@@ -380,4 +398,24 @@ export function removeOfflinePlayer(room, hostToken, playerId) {
   if (!target || target.connected || target === host) throw gameError('นำออกได้เฉพาะที่นั่งออฟไลน์');
   room.players = room.players.filter(p => p !== target);
   pushLog(room, `${target.name} ถูกนำออกจากที่นั่งออฟไลน์`, 'offline');
+}
+
+const boomApi = {advanceTurn,pushLog,checkWinner,gameError};
+export function setMode(room, token, mode) {
+  const host = findPlayer(room,token);
+  if (!host.host || room.phase !== 'lobby') throw gameError('เฉพาะเจ้าของห้องเปลี่ยนโหมดได้ใน Lobby');
+  if (!['zombie','boom'].includes(mode)) throw gameError('โหมดเกมไม่ถูกต้อง');
+  if (room.mode === mode) return room;
+  room.mode = mode;
+  for (const p of room.players) p.ready = false;
+  pushLog(room, `เปลี่ยนเป็น ${mode === 'boom' ? 'Boom Cats' : 'Zombie Cats'} — ทุกคนกดพร้อมใหม่`, 'info');
+  return room;
+}
+
+export function setVisibility(room, token, listed) {
+  const host = findPlayer(room,token);
+  if (!host.host || room.phase !== 'lobby') throw gameError('เฉพาะเจ้าของห้องเปลี่ยนการแสดงห้องได้ใน Lobby');
+  if (typeof listed !== 'boolean') throw gameError('รูปแบบการแสดงห้องไม่ถูกต้อง');
+  room.listed = listed;
+  return room;
 }
