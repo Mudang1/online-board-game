@@ -5,7 +5,7 @@ import {randomBytes, randomInt} from 'node:crypto';
 import {Server} from 'socket.io';
 import path from 'node:path';
 import {fileURLToPath} from 'node:url';
-import {createRoom,joinRoom,setReady,startGame,playCard,drawCard,disconnectPlayer,reconnectPlayer,restartRoom,expireTurn,leaveRoom,removeOfflinePlayer,setMode,setVisibility} from './src/game/engine.js';
+import {createRoom,joinRoom,setReady,startGame,playCard,drawCard,disconnectPlayer,reconnectPlayer,restartRoom,expireTurn,leaveRoom,removeOfflinePlayer,setMode,setVisibility,crystalAction} from './src/game/engine.js';
 import {serializePublicRoom,serializePrivatePlayer} from './src/game/views.js';
 const root=path.dirname(fileURLToPath(import.meta.url));
 const fail=message=>{throw new Error(message);};
@@ -66,6 +66,7 @@ export function createGameServer(){
      else {if(typeof payload.cardId!=='string')fail('การ์ดไม่ถูกต้อง');const target=r.players.find(x=>x.id===payload.targetId);playCard(r,p.token,payload.cardId,target?.token);}
      emitRoom(r);
    });
+   on('crystal-action',payload=>{const[r,p]=requireMember(socket,payload);if(payload.turnNumber!==r.turnNumber)fail('เทิร์นเปลี่ยนแล้ว กรุณาเลือกใหม่');if(Date.now()>=r.turnDeadline){if(expireTurn(r))emitRoom(r);fail('หมดเวลาเทิร์นแล้ว');}crystalAction(r,p.token,payload);emitRoom(r);});
    on('restart',payload=>{const[r,p]=requireMember(socket,payload);if(!p.host)fail('เฉพาะเจ้าของห้อง');if(r.phase!=='finished')fail('ต้องจบเกมก่อนเริ่มรอบใหม่');r.players=r.players.filter(x=>x.connected);restartRoom(r,p.token);emitRoom(r);});
    on('leave-room',payload=>{const[r,p]=requireMember(socket,payload);leaveRoom(r,p.token);socket.data.code=null;socket.data.playerId=null;emitRoom(r);if(!r.players.some(x=>x.connected))r.emptySince=Date.now();});
    on('chat',payload=>{const[r,p]=requireMember(socket,payload);if(typeof payload.text!=='string')fail('ข้อความไม่ถูกต้อง');const text=payload.text.trim().slice(0,200);if(!text)return;if(Date.now()-lastChat<700)fail('กรุณารอสักครู่ก่อนส่งข้อความ');lastChat=Date.now();r.log.unshift({id:randomBytes(8).toString('hex'),message:`${p.name}: ${text}`,type:'chat',at:Date.now()});r.log=r.log.slice(0,40);emitRoom(r);});

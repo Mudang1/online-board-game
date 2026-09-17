@@ -58,3 +58,19 @@ test('room browser lists public rooms only, updates occupancy and enforces host 
  await request(guest,'leave-room',{code:pub.code});await request(host,'restart',{code:pub.code});assert.equal((await request(host,'set-visibility',{code:pub.code,listed:false})).ok,true);
  list=await request(guest,'list-rooms');assert.deepEqual(list.rooms,[]);
 });
+test('Crystal Guild syncs turns, private reservations, purchase and stale-action rejection',async t=>{
+ const game=createGameServer();await new Promise(r=>game.server.listen(0,'127.0.0.1',r));const url=`http://127.0.0.1:${game.server.address().port}`;
+ const a=connect(url,{forceNew:true,reconnection:false}),b=connect(url,{forceNew:true,reconnection:false});t.after(async()=>{a.disconnect();b.disconnect();await game.close();});
+ await Promise.all([a,b].map(s=>new Promise(r=>s.on('connect',r))));const host=await request(a,'create-room',{name:'Smith',mode:'crystal',listed:true}),code=host.code;
+ await request(b,'join-room',{name:'Mage',code});assert.equal((await request(b,'list-rooms')).rooms[0].mode,'crystal');
+ for(const s of[a,b])await request(s,'ready',{code,ready:true});await request(a,'start-game',{code});const room=game.rooms.get(code),id=room.crystal.market[0][0];
+ assert.equal((await request(b,'crystal-action',{code,turnNumber:1,action:'take',gems:['ember']})).ok,false);
+ const guestState=waitState(b,s=>s.room.turnNumber===2),hostState=waitState(a,s=>s.room.turnNumber===2);
+ assert.equal((await request(a,'crystal-action',{code,turnNumber:1,action:'reserve',cardId:id})).ok,true);
+ assert.equal((await hostState).me.crystal.reserved[0].id,id);assert.equal(JSON.stringify(await guestState).includes(id),false);
+ assert.equal((await request(a,'crystal-action',{code,turnNumber:1,action:'pass'})).ok,false);
+ assert.equal((await request(b,'crystal-action',{code,turnNumber:2,action:'take',gems:['tide','moon','leaf']})).ok,true);
+ room.players[0].crystal.bonuses={ember:10,tide:10,leaf:10,moon:10};
+ assert.equal((await request(a,'crystal-action',{code,turnNumber:3,action:'buy',cardId:id,payment:{prism:-999}})).ok,true);
+ assert.equal(room.players[0].crystal.owned[0],id);assert.equal(room.players[0].crystal.reserved.length,0);assert.equal(room.players[0].crystal.tokens.prism,1);
+});
